@@ -10,7 +10,19 @@ from src.build_faiss import update_or_create_faiss_index
 from src.search_with_faiss import load_faiss_index, search_similar_images
 import sys
 
+from fastapi.middleware.cors import CORSMiddleware
+
+
+
 app = FastAPI()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Permet à toutes les origines d'accéder
+    allow_credentials=True,
+    allow_methods=["*"],  # Permet toutes les méthodes HTTP
+    allow_headers=["*"],  # Permet tous les headers
+)
+
 
 # Configuration des dossiers
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # Racine du projet IA-MIST
@@ -69,8 +81,14 @@ async def add_image(category: str, files: List[UploadFile] = File(...)):
 
     # Mettre à jour l'index FAISS
     update_or_create_faiss_index(category)
+    
+    response = {
+        "uuids": uuids,
+       
+    }
 
-    return {"message": f"{len(uuids)} image(s) ajoutée(s) à {category} et index FAISS mis à jour."}
+    return response
+
 
 # Endpoint pour lister les images avec vérification des UUIDs liés aux embeddings
 @app.get("/list/")
@@ -102,7 +120,7 @@ async def list_images(category: str):
         "faiss_embeddings": index.ntotal,
         "uuids": linked_uuids,
         "missing_uuids": missing_uuids,  # UUIDs sans embeddings associés
-        "status": "OK" if not missing_uuids else "Mismatch detected",
+        "status": "ok" if not missing_uuids else "Mismatch detected",
     }
 
     if missing_uuids:
