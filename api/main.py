@@ -138,17 +138,6 @@ async def delete_image(category: str, uuid_to_delete: str = Form(...)):
     return {"message": f"Image avec UUID {uuid_to_delete} supprimée avec succès de {category}."}
 
 
-
-# faire un ajout de 3 images du meme animal ok 
-# il faut send la requete 2 fois sinon "there was an error parsing the body" => voir si cest pas postman
-# faire list pr voir que tt est coherent ok
-# faire search avec une 4 e image de l'animal => attendu le top 5 des images les plus ressemblantes 
-# faire pareil avec un animal différent pas de images proposé (définir un score de similarité fin pr pas avoirtjr 
-# des propositions)
-
-# créer le frontend connecter l'api pr test 
-# si test ok et j'ai le temps => deployer 
-
 @app.post("/test-files/")
 async def test_files(files: List[UploadFile] = File(...)):
     file_sizes = []

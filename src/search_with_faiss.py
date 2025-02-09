@@ -75,7 +75,7 @@ def search_similar_images(category: str, query_img_bytes: bytes, top_k: int = 5)
         print(f"📌 Indices retournés : {indices[0]}")
 
         # Filtrer les résultats valides (indices >= 0 et distances > 0)
-        SIMILARITY_THRESHOLD = 0.9  # Ajustez ce seuil selon vos besoins
+        SIMILARITY_THRESHOLD = 0.6  # Ajustez ce seuil selon vos besoins
         valid_results = [
             {"uuid": str(image_uuids[i]), "distance": float(d)}
             for i, d in zip(indices[0], distances[0])
