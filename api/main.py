@@ -10,7 +10,19 @@ from src.build_faiss import update_or_create_faiss_index
 from src.search_with_faiss import load_faiss_index, search_similar_images
 import sys
 
+from fastapi.middleware.cors import CORSMiddleware
+
+
+
 app = FastAPI()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Permet à toutes les origines d'accéder
+    allow_credentials=True,
+    allow_methods=["*"],  # Permet toutes les méthodes HTTP
+    allow_headers=["*"],  # Permet tous les headers
+)
+
 
 # Configuration des dossiers
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # Racine du projet IA-MIST
@@ -69,29 +81,52 @@ async def add_image(category: str, files: List[UploadFile] = File(...)):
 
     # Mettre à jour l'index FAISS
     update_or_create_faiss_index(category)
+    
+    response = {
+        "uuids": uuids,
+       
+    }
 
-    return {"message": f"{len(uuids)} image(s) ajoutée(s) à {category} et index FAISS mis à jour."}
+    return response
 
-# Liste des images
+
+# Endpoint pour lister les images avec vérification des UUIDs liés aux embeddings
 @app.get("/list/")
 async def list_images(category: str):
     """
-    📌 Retourne la liste des UUIDs enregistrés dans l'index FAISS.
+    📌 Retourne la liste des UUIDs enregistrés et vérifie qu'ils sont liés aux embeddings dans l'index FAISS.
     """
-    uuids_file = os.path.join(EMBEDDINGS_FOLDER, category, f"image_uuids_{category}.npy")
+    category_folder = os.path.join(EMBEDDINGS_FOLDER, category)
+    uuids_file = os.path.join(category_folder, f"image_uuids_{category}.npy")
+    embeddings_file = os.path.join(category_folder, "image_embeddings.npy")
+    index_path = os.path.join(category_folder, f"faiss_{category}.idx")
 
-    if not os.path.exists(uuids_file):
-        return {"message": "Aucune image enregistrée pour cette catégorie."}
+    # Vérifier si les fichiers nécessaires existent
+    if not os.path.exists(uuids_file) or not os.path.exists(embeddings_file) or not os.path.exists(index_path):
+        return {"message": "Aucun index FAISS ou données associées trouvées pour cette catégorie."}
 
+    # Charger les UUIDs et les embeddings
     uuids = np.load(uuids_file, allow_pickle=True).tolist()
-    index = faiss.read_index(os.path.join(EMBEDDINGS_FOLDER, category, f"faiss_{category}.idx"))
+    embeddings_dict = np.load(embeddings_file, allow_pickle=True).item()
+    index = faiss.read_index(index_path)
 
-    return {
+    # Vérifier si tous les UUIDs ont des embeddings associés
+    missing_uuids = [uuid for uuid in uuids if uuid not in embeddings_dict]
+    linked_uuids = [uuid for uuid in uuids if uuid in embeddings_dict]
+
+    response = {
         "category": category,
         "total_images": len(uuids),
         "faiss_embeddings": index.ntotal,
-        "uuids": uuids,
+        "uuids": linked_uuids,
+        "missing_uuids": missing_uuids,  # UUIDs sans embeddings associés
+        "status": "ok" if not missing_uuids else "Mismatch detected",
     }
+
+    if missing_uuids:
+        print(f"⚠️ Les UUIDs suivants n'ont pas d'embeddings associés : {missing_uuids}")
+
+    return response
 
 # Recherche d'images
 @app.post("/search/")
@@ -107,7 +142,7 @@ async def search_image(category: str, file: UploadFile = File(...)):
 
     return query_results
 
-# Suppression d'une image
+
 @app.post("/delete/")
 async def delete_image(category: str, uuid_to_delete: str = Form(...)):
     """
@@ -116,26 +151,37 @@ async def delete_image(category: str, uuid_to_delete: str = Form(...)):
     category_folder = os.path.join(EMBEDDINGS_FOLDER, category)
     embeddings_file = os.path.join(category_folder, "image_embeddings.npy")
     uuids_file = os.path.join(category_folder, f"image_uuids_{category}.npy")
+    index_path = os.path.join(category_folder, f"faiss_{category}.idx")
 
-    if not os.path.exists(embeddings_file):
-        return {"message": "Erreur : Aucun embedding trouvé pour cette catégorie."}
+    # Vérifier que les fichiers nécessaires existent
+    if not os.path.exists(embeddings_file) or not os.path.exists(uuids_file) or not os.path.exists(index_path):
+        return {"message": "Erreur : Données manquantes pour cette catégorie."}
 
+    # Charger les embeddings et les UUIDs
     embeddings_dict = np.load(embeddings_file, allow_pickle=True).item()
+    uuids = np.load(uuids_file, allow_pickle=True).tolist()
+
     if uuid_to_delete not in embeddings_dict:
         return {"message": "Erreur : UUID non trouvé dans l'index."}
 
-    # Supprimer l'embedding et l'UUID
+    # Supprimer l'UUID et l'embedding associé
     del embeddings_dict[uuid_to_delete]
-    np.save(embeddings_file, embeddings_dict)
-
-    uuids = np.load(uuids_file, allow_pickle=True).tolist()
     uuids.remove(uuid_to_delete)
+
+    # Recréer l'index FAISS sans l'embedding supprimé
+    all_embeddings = np.array(list(embeddings_dict.values())).astype("float32")
+    index = faiss.IndexFlatIP(all_embeddings.shape[1])  # Recrée un nouvel index FAISS
+    index.add(all_embeddings)  # Ajoute les embeddings restants au nouvel index
+
+    # Sauvegarder le nouvel index FAISS
+    faiss.write_index(index, index_path)
+
+    # Sauvegarder les mises à jour
+    np.save(embeddings_file, embeddings_dict)
     np.save(uuids_file, np.array(uuids, dtype=object))
 
-    # Mettre à jour l'index FAISS
-    update_or_create_faiss_index(category)
+    return {"message": f"Image avec UUID {uuid_to_delete} et son embedding associé ont été supprimés avec succès de {category}."}
 
-    return {"message": f"Image avec UUID {uuid_to_delete} supprimée avec succès de {category}."}
 
 
 @app.post("/test-files/")
