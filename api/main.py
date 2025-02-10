@@ -40,6 +40,11 @@ class LimitSizeMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 app.add_middleware(LimitSizeMiddleware)
+
+@app.get("/")
+def root():
+    return {"message": "L'API est en ligne et fonctionne correctement ! 🚀"}
+
 @app.post("/add/")
 async def add_image(category: str, files: List[UploadFile] = File(...)):
     """
