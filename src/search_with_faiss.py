@@ -52,9 +52,18 @@ def load_faiss_index(category: str):
         print(f"❌ Erreur lors du chargement de l'index FAISS : {e}")
         return None, None
 
-def search_similar_images(category: str, query_img_bytes: bytes, top_k: int = 5) -> List[dict]:
+def search_similar_images(category: str, query_img_bytes: bytes, top_k: int = 5, similarity_threshold: float = 0.6) -> List[dict]:
     """
     📌 Recherche les images les plus similaires en utilisant FAISS.
+    
+    Args:
+        category (str): Catégorie des images (ex: "lost", "found").
+        query_img_bytes (bytes): Image de requête sous forme de bytes.
+        top_k (int): Nombre maximum de résultats à retourner.
+        similarity_threshold (float): Seuil minimal de similarité (cosine similarity ou produit scalaire).
+    
+    Returns:
+        List[dict]: Liste des résultats valides avec UUIDs et distances, ou une liste vide si aucun résultat.
     """
     # Charger l'index FAISS et les UUIDs
     index, image_uuids = load_faiss_index(category)
@@ -71,15 +80,14 @@ def search_similar_images(category: str, query_img_bytes: bytes, top_k: int = 5)
     try:
         # Effectuer la recherche FAISS
         distances, indices = index.search(query_embedding, top_k)
-        print(f"📌 Distances retournées : {distances[0]}")
+        print(f"📌 Distances retournées (cosine similarity) : {distances[0]}")
         print(f"📌 Indices retournés : {indices[0]}")
 
-        # Filtrer les résultats valides (indices >= 0 et distances > 0)
-        SIMILARITY_THRESHOLD = 0.6  # Ajustez ce seuil selon vos besoins
+        # Filtrer les résultats valides (indices >= 0 et distances > similarity_threshold)
         valid_results = [
             {"uuid": str(image_uuids[i]), "distance": float(d)}
             for i, d in zip(indices[0], distances[0])
-            if i >= 0 and d > SIMILARITY_THRESHOLD
+            if i >= 0 and d > similarity_threshold
         ]
 
         if not valid_results:
