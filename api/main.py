@@ -40,12 +40,10 @@ class LimitSizeMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 app.add_middleware(LimitSizeMiddleware)
-
-# Ajout d'images
 @app.post("/add/")
 async def add_image(category: str, files: List[UploadFile] = File(...)):
     """
-    📌 Ajoute une ou plusieurs images à une catégorie FAISS et met à jour l'index.
+    📌 Ajoute une ou plusieurs images à une catégorie FAISS et vérifie si un embedding similaire existe déjà.
     """
     category_folder = os.path.join(EMBEDDINGS_FOLDER, category)
     os.makedirs(category_folder, exist_ok=True)
@@ -58,17 +56,28 @@ async def add_image(category: str, files: List[UploadFile] = File(...)):
 
     # Charger les anciens embeddings
     embeddings_file = os.path.join(category_folder, "image_embeddings.npy")
+    uuids_file = os.path.join(category_folder, f"image_uuids_{category}.npy")
+
     if os.path.exists(embeddings_file):
         embeddings_dict = np.load(embeddings_file, allow_pickle=True).item()
     else:
         embeddings_dict = {}
 
-    # Charger les UUIDs existants
-    uuids_file = os.path.join(category_folder, f"image_uuids_{category}.npy")
     if os.path.exists(uuids_file):
         existing_uuids = np.load(uuids_file, allow_pickle=True).tolist()
     else:
         existing_uuids = []
+
+    # Vérifier si un embedding similaire existe déjà
+    for new_embedding, new_uuid in zip(embeddings, uuids):
+        for existing_uuid, existing_embedding in embeddings_dict.items():
+            # Calcul de la distance (cosine similarity ou euclidean distance)
+            similarity = np.dot(new_embedding, existing_embedding)  # Produit scalaire pour similarité cosinus
+            if similarity > 0.99:  # Contrainte de similarité (ajustez le seuil selon vos besoins)
+                return {
+                    "message": "Un match parfait existe, veuillez consulter le post.",
+                    "uuid": existing_uuid,
+                }
 
     # Ajouter les nouveaux embeddings et UUIDs
     for uuid_val, embedding in zip(uuids, embeddings):
@@ -81,13 +90,14 @@ async def add_image(category: str, files: List[UploadFile] = File(...)):
 
     # Mettre à jour l'index FAISS
     update_or_create_faiss_index(category)
-    
+
     response = {
+        "message": "Les images ont été ajoutées avec succès.",
         "uuids": uuids,
-       
     }
 
     return response
+
 
 
 # Endpoint pour lister les images avec vérification des UUIDs liés aux embeddings
