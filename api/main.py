@@ -1,7 +1,6 @@
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
 import os
-import uuid
 import numpy as np
 import faiss
 from typing import List
