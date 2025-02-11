@@ -101,15 +101,7 @@ def extract_embeddings(images_bytes: List[bytes], category: str) -> Tuple[np.nda
     embeddings = base_model.predict(img_arrays, batch_size=BATCH_SIZE)
     embeddings /= np.linalg.norm(embeddings, axis=1, keepdims=True)
 
-    # ✅ Charger les UUID existants
-    if os.path.exists(uuids_file):
-        existing_uuids = np.load(uuids_file, allow_pickle=True).tolist()
-    else:
-        existing_uuids = []
-
-    # ✅ Ajouter les nouveaux UUIDs
-    existing_uuids.extend(uuids)
-    np.save(uuids_file, np.array(existing_uuids, dtype=object))
+  
 
     return embeddings, uuids
 

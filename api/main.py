@@ -41,6 +41,8 @@ class LimitSizeMiddleware(BaseHTTPMiddleware):
 
 app.add_middleware(LimitSizeMiddleware)
 
+EMBEDDING_DIMENSION = 1280
+
 @app.get("/")
 def root():
     return {"message": "L'API est en ligne et fonctionne correctement ! 🚀"}
@@ -53,11 +55,21 @@ async def add_image(category: str, files: List[UploadFile] = File(...)):
     category_folder = os.path.join(EMBEDDINGS_FOLDER, category)
     os.makedirs(category_folder, exist_ok=True)
 
+    print("📂 Chargement des images et extraction des embeddings...")
     image_bytes = [await file.read() for file in files]
     embeddings, uuids = extract_embeddings(image_bytes, category)
 
     if len(embeddings) == 0:
+        print("❌ Erreur : Aucun embedding extrait.")
         return {"message": "Erreur : Impossible d'extraire les embeddings."}
+
+    print("✅ Embeddings extraits avec succès.")
+    print(f"👉 Dimension des embeddings : {embeddings.shape}")
+
+    # Vérification de la dimension des embeddings
+    if embeddings.shape[1] != 1280: 
+        print(f"❌ Erreur : Embedding généré avec une dimension incorrecte ({embeddings.shape[1]}).")
+        return {"message": "Erreur embedding généré incorrect"}
 
     # Charger les anciens embeddings
     embeddings_file = os.path.join(category_folder, "image_embeddings.npy")
@@ -73,35 +85,41 @@ async def add_image(category: str, files: List[UploadFile] = File(...)):
     else:
         existing_uuids = []
 
+    print("🔍 Vérification des similarités...")
     # Vérifier si un embedding similaire existe déjà
-    for new_embedding, new_uuid in zip(embeddings, uuids):
+    for new_embedding, _ in zip(embeddings, uuids):
         for existing_uuid, existing_embedding in embeddings_dict.items():
-            # Calcul de la distance (cosine similarity ou euclidean distance)
             similarity = np.dot(new_embedding, existing_embedding)  # Produit scalaire pour similarité cosinus
             if similarity > 0.99:  # Contrainte de similarité (ajustez le seuil selon vos besoins)
+                print(f"⚠️ Match parfait détecté avec l'UUID existant : {existing_uuid}")
                 return {
                     "message": "Un match parfait existe, veuillez consulter le post.",
                     "uuid": existing_uuid,
                 }
+            print("Ce log ne devrait jamais s'afficher !")
 
+    print("✅ Aucun match parfait détecté. Ajout des nouveaux embeddings.")
     # Ajouter les nouveaux embeddings et UUIDs
     for uuid_val, embedding in zip(uuids, embeddings):
         embeddings_dict[uuid_val] = embedding
     existing_uuids.extend(uuids)
 
     # Sauvegarder les mises à jour
+    print("💾 Sauvegarde des embeddings et des UUIDs...")
     np.save(embeddings_file, embeddings_dict)
     np.save(uuids_file, np.array(existing_uuids, dtype=object))
 
     # Mettre à jour l'index FAISS
+    print("📈 Mise à jour de l'index FAISS...")
     update_or_create_faiss_index(category)
 
     response = {
         "message": "Les images ont été ajoutées avec succès.",
         "uuids": uuids,
     }
-
+    print("✅ Processus terminé avec succès.")
     return response
+
 
 
 
